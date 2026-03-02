@@ -1,37 +1,24 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Web AR Exploded View</title>
+  <title>Web AR Exploded View + Chat</title>
 
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
   <style>
-    :root { --pad: 12px; }
+    :root { --pad: 12px; --radius: 14px; }
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
     .wrap { height: 100vh; display: flex; flex-direction: column; background: #fff; }
 
-    model-viewer {
-      width: 100%;
-      flex: 1;
-      background: #f4f4f4;
-    }
+    model-viewer { width: 100%; flex: 1; background: #f4f4f4; }
 
-    /* ✅ 让 model-viewer 的 AR 按钮变大（关键） */
-    model-viewer::part(default-ar-button) {
-      width: 88px;
-      height: 88px;
-      border-radius: 999px;
-      font-size: 16px;
-      /* 可选：更显眼一点 */
-      border: 2px solid #111;
-    }
-
-    /* 有些版本使用 ar-button 这个 part 名，保险起见也写上 */
+    /* Make the AR button bigger */
+    model-viewer::part(default-ar-button),
     model-viewer::part(ar-button) {
-      width: 88px;
-      height: 88px;
+      width: 84px;
+      height: 84px;
       border-radius: 999px;
       font-size: 16px;
       border: 2px solid #111;
@@ -40,14 +27,11 @@
     .panel {
       padding: var(--pad);
       border-top: 1px solid #e6e6e6;
-      background: #ffffff;
+      background: #fff;
       position: relative;
     }
-    .btns {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
+
+    .btns { display: flex; gap: 8px; flex-wrap: wrap; }
     button {
       padding: 10px 12px;
       border: 1px solid #ddd;
@@ -71,31 +55,112 @@
       white-space: pre-wrap;
     }
 
-    /* ✅ 右下角复制按钮保留（可选），但你现在切换时会自动复制 */
-    .copy-btn {
+    /* Chat widget: bottom-right floating panel */
+    .chat-fab {
       position: absolute;
       right: var(--pad);
-      bottom: var(--pad);
-      border-radius: 999px;
-      padding: 10px 14px;
-      border: 1px solid #ccc;
+      top: var(--pad);
       background: #111;
       color: #fff;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+
+    .chat {
+      position: fixed;
+      right: 12px;
+      bottom: 12px;
+      width: min(380px, calc(100vw - 24px));
+      height: min(520px, calc(100vh - 24px));
+      background: #fff;
+      border: 1px solid #e6e6e6;
+      border-radius: var(--radius);
+      box-shadow: 0 12px 30px rgba(0,0,0,0.12);
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+      z-index: 9999;
+    }
+
+    .chat.open { display: flex; }
+
+    .chat-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      background: #111;
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .chat-header button {
+      background: transparent;
+      border: none;
+      color: #fff;
+      padding: 6px 10px;
+      border-radius: 10px;
       cursor: pointer;
       font-size: 14px;
     }
 
-    /* 简易 toast 提示 */
-    .toast {
-      position: absolute;
-      left: var(--pad);
-      bottom: var(--pad);
+    .chat-body {
+      flex: 1;
       padding: 10px 12px;
-      background: rgba(0,0,0,0.85);
+      overflow: auto;
+      background: #fafafa;
+    }
+
+    .msg { margin: 10px 0; display: flex; }
+    .msg.user { justify-content: flex-end; }
+    .msg.ai { justify-content: flex-start; }
+
+    .bubble {
+      max-width: 85%;
+      padding: 10px 12px;
+      border-radius: 14px;
+      font-size: 14px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .user .bubble { background: #111; color: #fff; border-bottom-right-radius: 6px; }
+    .ai .bubble { background: #fff; color: #111; border: 1px solid #e6e6e6; border-bottom-left-radius: 6px; }
+
+    .chat-footer {
+      display: flex;
+      gap: 8px;
+      padding: 10px 12px;
+      border-top: 1px solid #e6e6e6;
+      background: #fff;
+    }
+
+    .chat-footer input {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid #ddd;
+      font-size: 14px;
+      outline: none;
+    }
+
+    .send-btn {
+      background: #111;
       color: #fff;
-      border-radius: 10px;
-      font-size: 13px;
-      display: none;
+      border: none;
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+      font-size: 14px;
+      white-space: nowrap;
+    }
+
+    .hint {
+      font-size: 12px;
+      color: #666;
+      margin-top: 6px;
     }
   </style>
 </head>
@@ -109,11 +174,11 @@
       ar
       ar-modes="quick-look webxr scene-viewer"
       shadow-intensity="1"
-      exposure="1.0"
       alt="Product model">
     </model-viewer>
 
     <div class="panel">
+      <!-- Buttons -->
       <div class="btns">
         <button onclick="setStateAndAutoCopy('Assembled', 'assembled.glb', 'assembled.usdz')">not explode</button>
         <button onclick="setStateAndAutoCopy('Explode A', 'explode_A.glb', 'explode_A.usdz')">Part A</button>
@@ -122,14 +187,30 @@
       </div>
 
       <div class="status">
-        current state：<b id="stateName">Assembled</b><br/>
-        copied content：<code id="stateText"></code>
+        Current state: <b id="stateName">Assembled</b><br/>
+        Copied state text: <code id="stateText"></code>
+        <div class="hint">Switching buttons auto-copies the state.</div>
       </div>
 
-      <!-- 可选：仍然保留手动复制按钮，防止少数浏览器自动复制失败 -->
-      <button class="copy-btn" onclick="copyState(false)">copy state</button>
+      <button class="chat-fab" onclick="toggleChat()">Chat</button>
+    </div>
+  </div>
 
-      <div class="toast" id="toast">already copied</div>
+  <!-- Chat Panel -->
+  <div class="chat" id="chatPanel">
+    <div class="chat-header">
+      <div>AI Assistant</div>
+      <div>
+        <button onclick="clearChat()">Clear</button>
+        <button onclick="toggleChat()">Close</button>
+      </div>
+    </div>
+
+    <div class="chat-body" id="chatBody"></div>
+
+    <div class="chat-footer">
+      <input id="chatInput" placeholder="Type your question..." />
+      <button class="send-btn" onclick="sendMessage()">Send</button>
     </div>
   </div>
 
@@ -137,25 +218,21 @@
     const mv = document.getElementById("mv");
     const stateNameEl = document.getElementById("stateName");
     const stateTextEl = document.getElementById("stateText");
-    const toastEl = document.getElementById("toast");
 
-    const state = {
-      view: "Assembled",
-      glb: "assembled.glb",
-      usdz: "assembled.usdz",
-      ts: Date.now()
-    };
+    const chatPanel = document.getElementById("chatPanel");
+    const chatBody = document.getElementById("chatBody");
+    const chatInput = document.getElementById("chatInput");
 
+    // Minimal state
+    const state = { view: "Assembled", glb: "assembled.glb", usdz: "assembled.usdz", ts: Date.now() };
+
+    // ====== 1) Exploded-view state + auto-copy ======
     updateStateText();
 
-    // ✅ 点击切换按钮时：切模型 + 更新state + 自动复制
     async function setStateAndAutoCopy(viewName, glbFile, usdzFile) {
-      // 1) 切换网页3D模型
       mv.src = glbFile;
-      // 2) 切换 iOS AR（Quick Look）模型
       mv.setAttribute("ios-src", usdzFile);
 
-      // 3) 更新状态
       state.view = viewName;
       state.glb = glbFile;
       state.usdz = usdzFile;
@@ -164,45 +241,86 @@
       stateNameEl.textContent = viewName;
       updateStateText();
 
-      // 4) 自动复制（静默，不弹 alert）
+      // Auto copy on button click
       await copyState(true);
     }
 
-function updateStateText() {
-  // state.view 的值来自按钮 setStateAndAutoCopy() 的第一个参数
-  // 这里把它映射成你想要的短文本
-  let shortText = "assembled";
+    function updateStateText() {
+      // If you only want "explode A/B/all/assembled", keep it short:
+      let shortText = "assembled";
+      if (state.view === "Explode A") shortText = "explode A";
+      else if (state.view === "Explode B") shortText = "explode B";
+      else if (state.view === "Explode ALL") shortText = "explode all";
+      else shortText = "assembled";
 
-  if (state.view === "Explode A") shortText = "explode A";
-  else if (state.view === "Explode B") shortText = "explode B";
-  else if (state.view === "Explode C") shortText = "explode C";
-  else if (state.view === "Explode ALL") shortText = "explode all";
-  else shortText = "assembled";
-
-  stateTextEl.textContent = shortText;
-}
-
-    function showToast(msg) {
-      toastEl.textContent = msg;
-      toastEl.style.display = "block";
-      clearTimeout(showToast._t);
-      showToast._t = setTimeout(() => {
-        toastEl.style.display = "none";
-      }, 1200);
+      stateTextEl.textContent = shortText;
     }
 
-    // silent=true：自动复制时不弹 alert，只给 toast
     async function copyState(silent) {
       const text = stateTextEl.textContent;
-
       try {
         await navigator.clipboard.writeText(text);
-        if (silent) showToast("已自动复制状态");
-        else alert("已复制到剪贴板！");
+        // silent: no alert
+        if (!silent) alert("Copied!");
       } catch (e) {
-        // iOS/Safari 某些情况下会限制剪贴板写入 -> 兜底
-        prompt("复制下面这段状态文本：", text);
+        // fallback
+        prompt("Copy this text:", text);
       }
+    }
+
+    // ====== 2) Chat UI (no API yet) ======
+    function toggleChat() {
+      chatPanel.classList.toggle("open");
+      if (chatPanel.classList.contains("open")) {
+        // focus input
+        setTimeout(() => chatInput.focus(), 50);
+      }
+    }
+
+    function clearChat() {
+      chatBody.innerHTML = "";
+    }
+
+    function appendMessage(role, text) {
+      const row = document.createElement("div");
+      row.className = `msg ${role}`;
+
+      const bubble = document.createElement("div");
+      bubble.className = "bubble";
+      bubble.textContent = text;
+
+      row.appendChild(bubble);
+      chatBody.appendChild(row);
+      chatBody.scrollTop = chatBody.scrollHeight;
+    }
+
+    // Press Enter to send
+    chatInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") sendMessage();
+    });
+
+    async function sendMessage() {
+      const q = chatInput.value.trim();
+      if (!q) return;
+
+      // Auto include current state as context (simple + transparent)
+      const context = `(${stateTextEl.textContent})`;
+      appendMessage("user", `${context} ${q}`);
+      chatInput.value = "";
+
+      // Fake AI reply for now (later replace with real API call)
+      const reply = await fakeAIReply(q, stateTextEl.textContent);
+      appendMessage("ai", reply);
+    }
+
+    function fakeAIReply(question, shortState) {
+      // This is just to prove the UI works.
+      // Later, you'll replace this with a fetch() to your backend GPT endpoint.
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(`(demo) I know your current state is "${shortState}". You asked: "${question}".`);
+        }, 400);
+      });
     }
   </script>
 </body>
