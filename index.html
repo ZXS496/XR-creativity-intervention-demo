@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Web AR Exploded View + Chat</title>
+  <title>Web AR Exploded View + Screenshot Chat</title>
 
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
@@ -14,11 +14,10 @@
 
     model-viewer { width: 100%; flex: 1; background: #f4f4f4; }
 
-    /* Make the AR button bigger */
+    /* (可选) 放大 AR 按钮 */
     model-viewer::part(default-ar-button),
     model-viewer::part(ar-button) {
-      width: 84px;
-      height: 84px;
+      width: 84px; height: 84px;
       border-radius: 999px;
       font-size: 16px;
       border: 2px solid #111;
@@ -42,20 +41,9 @@
     }
     button:active { transform: scale(0.99); }
 
-    .status {
-      margin-top: 10px;
-      font-size: 13px;
-      color: #333;
-      line-height: 1.4;
-    }
-    .status code {
-      background: #f6f6f6;
-      padding: 2px 6px;
-      border-radius: 6px;
-      white-space: pre-wrap;
-    }
+    .hint { margin-top: 8px; font-size: 12px; color: #666; }
 
-    /* Chat widget: bottom-right floating panel */
+    /* Chat floating button */
     .chat-fab {
       position: absolute;
       right: var(--pad);
@@ -66,14 +54,16 @@
       border-radius: 999px;
       padding: 10px 14px;
       cursor: pointer;
+      font-size: 14px;
     }
 
+    /* Chat panel */
     .chat {
       position: fixed;
       right: 12px;
       bottom: 12px;
       width: min(380px, calc(100vw - 24px));
-      height: min(520px, calc(100vh - 24px));
+      height: min(540px, calc(100vh - 24px));
       background: #fff;
       border: 1px solid #e6e6e6;
       border-radius: var(--radius);
@@ -83,7 +73,6 @@
       overflow: hidden;
       z-index: 9999;
     }
-
     .chat.open { display: flex; }
 
     .chat-header {
@@ -95,7 +84,6 @@
       color: #fff;
       font-size: 14px;
     }
-
     .chat-header button {
       background: transparent;
       border: none;
@@ -129,14 +117,22 @@
     .user .bubble { background: #111; color: #fff; border-bottom-right-radius: 6px; }
     .ai .bubble { background: #fff; color: #111; border: 1px solid #e6e6e6; border-bottom-left-radius: 6px; }
 
+    .img-preview {
+      margin-top: 6px;
+      width: 180px;
+      border-radius: 10px;
+      border: 1px solid #e6e6e6;
+      display: block;
+    }
+
     .chat-footer {
       display: flex;
       gap: 8px;
       padding: 10px 12px;
       border-top: 1px solid #e6e6e6;
       background: #fff;
+      align-items: center;
     }
-
     .chat-footer input {
       flex: 1;
       padding: 10px 12px;
@@ -145,7 +141,6 @@
       font-size: 14px;
       outline: none;
     }
-
     .send-btn {
       background: #111;
       color: #fff;
@@ -157,11 +152,7 @@
       white-space: nowrap;
     }
 
-    .hint {
-      font-size: 12px;
-      color: #666;
-      margin-top: 6px;
-    }
+    .small { font-size: 12px; color: #666; }
   </style>
 </head>
 
@@ -178,18 +169,15 @@
     </model-viewer>
 
     <div class="panel">
-      <!-- Buttons -->
       <div class="btns">
-        <button onclick="setStateAndAutoCopy('Assembled', 'assembled.glb', 'assembled.usdz')">not explode</button>
-        <button onclick="setStateAndAutoCopy('Explode A', 'explode_A.glb', 'explode_A.usdz')">Part A</button>
-        <button onclick="setStateAndAutoCopy('Explode B', 'explode_B.glb', 'explode_B.usdz')">Part B</button>
-        <button onclick="setStateAndAutoCopy('Explode ALL', 'explode_all.glb', 'explode_all.usdz')">All explode</button>
+        <button onclick="setModel('assembled.glb','assembled.usdz')">not explode</button>
+        <button onclick="setModel('explode_A.glb','explode_A.usdz')">Part A</button>
+        <button onclick="setModel('explode_B.glb','explode_B.usdz')">Part B</button>
+        <button onclick="setModel('explode_all.glb','explode_all.usdz')">All explode</button>
       </div>
 
-      <div class="status">
-        Current state: <b id="stateName">Assembled</b><br/>
-        Copied state text: <code id="stateText"></code>
-        <div class="hint">Switching buttons auto-copies the state.</div>
+      <div class="hint">
+        When you click <b>Send</b>, the page will automatically take a snapshot of the current 3D view and send it to AI (later via API).
       </div>
 
       <button class="chat-fab" onclick="toggleChat()">Chat</button>
@@ -212,76 +200,32 @@
       <input id="chatInput" placeholder="Type your question..." />
       <button class="send-btn" onclick="sendMessage()">Send</button>
     </div>
+    <div class="small" style="padding: 0 12px 10px 12px;">
+      Note: iOS Quick Look AR view cannot be captured by the webpage. Ask while viewing the 3D preview.
+    </div>
   </div>
 
   <script>
     const mv = document.getElementById("mv");
-    const stateNameEl = document.getElementById("stateName");
-    const stateTextEl = document.getElementById("stateText");
-
     const chatPanel = document.getElementById("chatPanel");
     const chatBody = document.getElementById("chatBody");
     const chatInput = document.getElementById("chatInput");
 
-    // Minimal state
-    const state = { view: "Assembled", glb: "assembled.glb", usdz: "assembled.usdz", ts: Date.now() };
-
-    // ====== 1) Exploded-view state + auto-copy ======
-    updateStateText();
-
-    async function setStateAndAutoCopy(viewName, glbFile, usdzFile) {
+    function setModel(glbFile, usdzFile) {
       mv.src = glbFile;
       mv.setAttribute("ios-src", usdzFile);
-
-      state.view = viewName;
-      state.glb = glbFile;
-      state.usdz = usdzFile;
-      state.ts = Date.now();
-
-      stateNameEl.textContent = viewName;
-      updateStateText();
-
-      // Auto copy on button click
-      await copyState(true);
     }
 
-    function updateStateText() {
-      // If you only want "explode A/B/all/assembled", keep it short:
-      let shortText = "assembled";
-      if (state.view === "Explode A") shortText = "explode A";
-      else if (state.view === "Explode B") shortText = "explode B";
-      else if (state.view === "Explode ALL") shortText = "explode all";
-      else shortText = "assembled";
-
-      stateTextEl.textContent = shortText;
-    }
-
-    async function copyState(silent) {
-      const text = stateTextEl.textContent;
-      try {
-        await navigator.clipboard.writeText(text);
-        // silent: no alert
-        if (!silent) alert("Copied!");
-      } catch (e) {
-        // fallback
-        prompt("Copy this text:", text);
-      }
-    }
-
-    // ====== 2) Chat UI (no API yet) ======
+    // Chat UI
     function toggleChat() {
       chatPanel.classList.toggle("open");
       if (chatPanel.classList.contains("open")) {
-        // focus input
         setTimeout(() => chatInput.focus(), 50);
       }
     }
+    function clearChat() { chatBody.innerHTML = ""; }
 
-    function clearChat() {
-      chatBody.innerHTML = "";
-    }
-
-    function appendMessage(role, text) {
+    function appendMessage(role, text, imgDataUrl=null) {
       const row = document.createElement("div");
       row.className = `msg ${role}`;
 
@@ -289,12 +233,20 @@
       bubble.className = "bubble";
       bubble.textContent = text;
 
+      if (imgDataUrl) {
+        const img = document.createElement("img");
+        img.className = "img-preview";
+        img.src = imgDataUrl;
+        img.alt = "snapshot";
+        bubble.appendChild(document.createElement("br"));
+        bubble.appendChild(img);
+      }
+
       row.appendChild(bubble);
       chatBody.appendChild(row);
       chatBody.scrollTop = chatBody.scrollHeight;
     }
 
-    // Press Enter to send
     chatInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") sendMessage();
     });
@@ -302,24 +254,70 @@
     async function sendMessage() {
       const q = chatInput.value.trim();
       if (!q) return;
-
-      // Auto include current state as context (simple + transparent)
-      const context = `(${stateTextEl.textContent})`;
-      appendMessage("user", `${context} ${q}`);
       chatInput.value = "";
 
-      // Fake AI reply for now (later replace with real API call)
-      const reply = await fakeAIReply(q, stateTextEl.textContent);
+      // 1) capture snapshot automatically
+      const snapshot = await captureSnapshot(); // data:image/jpeg;base64,... or null
+
+      // 2) show user message + image preview
+      appendMessage("user", q, snapshot);
+
+      // 3) payload you will send to your backend later
+      const payload = {
+        question: q,
+        snapshot_data_url: snapshot,     // this is the important part
+        model_src: mv.getAttribute("src") // optional: helps you debug which model file was loaded
+      };
+      console.log("Payload to send to AI later:", payload);
+
+      // 4) demo AI reply for now
+      const reply = await fakeAIReply(payload);
       appendMessage("ai", reply);
     }
 
-    function fakeAIReply(question, shortState) {
-      // This is just to prove the UI works.
-      // Later, you'll replace this with a fetch() to your backend GPT endpoint.
+    // Snapshot capture (works for the 3D preview canvas)
+    async function captureSnapshot() {
+      try {
+        // Preferred: model-viewer has toDataURL() in many versions
+        if (typeof mv.toDataURL === "function") {
+          const pngDataUrl = await mv.toDataURL();
+          return await convertDataUrlToJpeg(pngDataUrl, 0.75);
+        }
+
+        // Fallback: try to find internal canvas
+        const canvas = mv.shadowRoot?.querySelector("canvas");
+        if (canvas && canvas.toDataURL) {
+          const pngDataUrl = canvas.toDataURL("image/png");
+          return await convertDataUrlToJpeg(pngDataUrl, 0.75);
+        }
+        return null;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    // Convert PNG to smaller JPEG to reduce bandwidth/cost
+    function convertDataUrlToJpeg(dataUrl, quality = 0.8) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement("canvas");
+          c.width = img.width;
+          c.height = img.height;
+          const ctx = c.getContext("2d");
+          ctx.drawImage(img, 0, 0);
+          resolve(c.toDataURL("image/jpeg", quality));
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      });
+    }
+
+    function fakeAIReply(payload) {
       return new Promise((resolve) => {
         setTimeout(() => {
-          resolve(`(demo) I know your current state is "${shortState}". You asked: "${question}".`);
-        }, 400);
+          resolve(`(demo) I received your question and a snapshot. model_src=${payload.model_src}.`);
+        }, 450);
       });
     }
   </script>
