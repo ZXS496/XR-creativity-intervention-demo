@@ -168,14 +168,19 @@
       await copyState(true);
     }
 
-    function updateStateText() {
-      const text =
-`XR_VIEW=${state.view}
-MODEL_GLB=${state.glb}
-MODEL_USDZ=${state.usdz}`;
+function updateStateText() {
+  // state.view 的值来自按钮 setStateAndAutoCopy() 的第一个参数
+  // 这里把它映射成你想要的短文本
+  let shortText = "assembled";
 
-      stateTextEl.textContent = text;
-    }
+  if (state.view === "Explode A") shortText = "explode A";
+  else if (state.view === "Explode B") shortText = "explode B";
+  else if (state.view === "Explode C") shortText = "explode C";
+  else if (state.view === "Explode ALL") shortText = "explode all";
+  else shortText = "assembled";
+
+  stateTextEl.textContent = shortText;
+}
 
     function showToast(msg) {
       toastEl.textContent = msg;
