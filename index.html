@@ -1,10 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-  <title>Web AR Exploded View + Screenshot Chat</title>
+  <title>Web AR Exploded View</title>
 
+  <!-- model-viewer: 最简单的 3D/AR Web 组件 -->
   <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
 
   <style>
@@ -12,25 +13,24 @@
     body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; }
     .wrap { height: 100vh; display: flex; flex-direction: column; background: #fff; }
 
-    model-viewer { width: 100%; flex: 1; background: #f4f4f4; }
-
-    /* (可选) 放大 AR 按钮 */
-    model-viewer::part(default-ar-button),
-    model-viewer::part(ar-button) {
-      width: 84px; height: 84px;
-      border-radius: 999px;
-      font-size: 16px;
-      border: 2px solid #111;
+    /* ✅ 3D 预览背景改成灰色 */
+    model-viewer {
+      width: 100%;
+      flex: 1;
+      background: #cfcfcf; /* 你也可以改成 #bdbdbd / #d0d0d0 */
     }
 
     .panel {
       padding: var(--pad);
       border-top: 1px solid #e6e6e6;
-      background: #fff;
+      background: #ffffff;
       position: relative;
     }
-
-    .btns { display: flex; gap: 8px; flex-wrap: wrap; }
+    .btns {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
     button {
       padding: 10px 12px;
       border: 1px solid #ddd;
@@ -41,9 +41,14 @@
     }
     button:active { transform: scale(0.99); }
 
-    .hint { margin-top: 8px; font-size: 12px; color: #666; }
+    .hint {
+      margin-top: 8px;
+      font-size: 12px;
+      color: #666;
+      line-height: 1.35;
+    }
 
-    /* Chat floating button */
+    /* ===== Chat UI ===== */
     .chat-fab {
       position: absolute;
       right: var(--pad);
@@ -57,7 +62,6 @@
       font-size: 14px;
     }
 
-    /* Chat panel */
     .chat {
       position: fixed;
       right: 12px;
@@ -118,11 +122,12 @@
     .ai .bubble { background: #fff; color: #111; border: 1px solid #e6e6e6; border-bottom-left-radius: 6px; }
 
     .img-preview {
-      margin-top: 6px;
+      margin-top: 8px;
       width: 180px;
       border-radius: 10px;
       border: 1px solid #e6e6e6;
       display: block;
+      background: #fff;
     }
 
     .chat-footer {
@@ -151,8 +156,12 @@
       font-size: 14px;
       white-space: nowrap;
     }
-
-    .small { font-size: 12px; color: #666; }
+    .small {
+      font-size: 12px;
+      color: #666;
+      padding: 0 12px 10px 12px;
+      line-height: 1.35;
+    }
   </style>
 </head>
 
@@ -165,19 +174,23 @@
       ar
       ar-modes="quick-look webxr scene-viewer"
       shadow-intensity="1"
+      exposure="1.0"
       alt="Product model">
     </model-viewer>
 
     <div class="panel">
       <div class="btns">
-        <button onclick="setModel('assembled.glb','assembled.usdz')">Planet Gearbox</button>
-        <button onclick="setModel('gear_exploded.glb','gear_exploded.usdz')">Gear</button>
-        <button onclick="setModel('motor_exploded.glb','motor_exploded.usdz')">Motor</button>
-        <button onclick="setModel('all_exploded.glb','all_exploded.usdz')">All Explode</button>
+        <button onclick="setModel('assembled.glb', 'assembled.usdz')">不爆炸</button>
+        <button onclick="setModel('explode_A.glb', 'explode_A.usdz')">部分 A</button>
+        <button onclick="setModel('explode_B.glb', 'explode_B.usdz')">部分 B</button>
+        <button onclick="setModel('explode_C.glb', 'explode_C.usdz')">部分 C</button>
+        <button onclick="setModel('explode_D.glb', 'explode_D.usdz')">部分 D</button>
+        <button onclick="setModel('explode_all.glb', 'explode_all.usdz')">全部爆炸</button>
       </div>
 
       <div class="hint">
-        When you click <b>Send</b>, the page will automatically take a snapshot of the current 3D view and send it to AI (later via API).
+        提示：iOS/iPad 真 AR 推荐提供 .usdz 文件；网页需 HTTPS 才更稳定。<br>
+        注意：网页截图只能截到“网页 3D 预览”，无法截 iOS Quick Look 的系统 AR 画面。
       </div>
 
       <button class="chat-fab" onclick="toggleChat()">Chat</button>
@@ -200,8 +213,9 @@
       <input id="chatInput" placeholder="Type your question..." />
       <button class="send-btn" onclick="sendMessage()">Send</button>
     </div>
-    <div class="small" style="padding: 0 12px 10px 12px;">
-      Note: iOS Quick Look AR view cannot be captured by the webpage. Ask while viewing the 3D preview.
+
+    <div class="small">
+      发送时会自动截取当前 3D 预览截图，并把“问题 + 截图”打包为 payload（已为后端接入准备）。
     </div>
   </div>
 
@@ -211,12 +225,13 @@
     const chatBody = document.getElementById("chatBody");
     const chatInput = document.getElementById("chatInput");
 
+    // ===== 1) 切换模型：不做任何复制 =====
     function setModel(glbFile, usdzFile) {
       mv.src = glbFile;
       mv.setAttribute("ios-src", usdzFile);
     }
 
-    // Chat UI
+    // ===== 2) Chat UI =====
     function toggleChat() {
       chatPanel.classList.toggle("open");
       if (chatPanel.classList.contains("open")) {
@@ -225,7 +240,7 @@
     }
     function clearChat() { chatBody.innerHTML = ""; }
 
-    function appendMessage(role, text, imgDataUrl=null) {
+    function appendMessage(role, text, imgDataUrl = null) {
       const row = document.createElement("div");
       row.className = `msg ${role}`;
 
@@ -251,52 +266,60 @@
       if (e.key === "Enter") sendMessage();
     });
 
+    // ===== 3) 发送时自动截图 + 组装 payload（为后端准备）=====
     async function sendMessage() {
       const q = chatInput.value.trim();
       if (!q) return;
       chatInput.value = "";
 
-      // 1) capture snapshot automatically
-      const snapshot = await captureSnapshot(); // data:image/jpeg;base64,... or null
+      // 自动截图（截网页 3D 预览）
+      const snapshotDataUrl = await captureSnapshot();
 
-      // 2) show user message + image preview
-      appendMessage("user", q, snapshot);
+      // 在聊天里显示用户消息 + 截图预览（方便你确认截到了）
+      appendMessage("user", q, snapshotDataUrl);
 
-      // 3) payload you will send to your backend later
+      // ✅ 为后端接入准备的 payload（暂时只 console.log，不发请求）
+      // 你之后接后端时：fetch('/ask', {method:'POST', headers:{...}, body: JSON.stringify(payload)})
       const payload = {
         question: q,
-        snapshot_data_url: snapshot,     // this is the important part
-        model_src: mv.getAttribute("src") // optional: helps you debug which model file was loaded
+        snapshot_data_url: snapshotDataUrl, // data:image/jpeg;base64,...
+        model_src: mv.getAttribute("src"),  // 当前加载的 glb（方便调试/后端日志）
+        ts: Date.now()
       };
-      console.log("Payload to send to AI later:", payload);
 
-      // 4) demo AI reply for now
-      const reply = await fakeAIReply(payload);
-      appendMessage("ai", reply);
+      console.log("READY_FOR_BACKEND_PAYLOAD:", payload);
+
+      // 临时模拟 AI 回复（你接后端后替换这里即可）
+      const demoReply = snapshotDataUrl
+        ? "(demo) I got your question and a snapshot. (Replace this with real GPT response after backend is connected.)"
+        : "(demo) Snapshot capture failed on this device/browser. (Still can send question only.)";
+
+      appendMessage("ai", demoReply);
     }
 
-    // Snapshot capture (works for the 3D preview canvas)
+    // ===== 4) 截图：优先用 model-viewer.toDataURL()，否则尝试内部 canvas =====
     async function captureSnapshot() {
       try {
-        // Preferred: model-viewer has toDataURL() in many versions
+        // 优先：model-viewer 常见版本支持 toDataURL()
         if (typeof mv.toDataURL === "function") {
           const pngDataUrl = await mv.toDataURL();
           return await convertDataUrlToJpeg(pngDataUrl, 0.75);
         }
 
-        // Fallback: try to find internal canvas
+        // 兜底：尝试拿到 shadowRoot 内部 canvas
         const canvas = mv.shadowRoot?.querySelector("canvas");
         if (canvas && canvas.toDataURL) {
           const pngDataUrl = canvas.toDataURL("image/png");
           return await convertDataUrlToJpeg(pngDataUrl, 0.75);
         }
+
         return null;
       } catch (e) {
         return null;
       }
     }
 
-    // Convert PNG to smaller JPEG to reduce bandwidth/cost
+    // PNG -> JPEG（减小体积，未来传后端更省）
     function convertDataUrlToJpeg(dataUrl, quality = 0.8) {
       return new Promise((resolve) => {
         const img = new Image();
@@ -310,14 +333,6 @@
         };
         img.onerror = () => resolve(dataUrl);
         img.src = dataUrl;
-      });
-    }
-
-    function fakeAIReply(payload) {
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          resolve(`(demo) I received your question and a snapshot. model_src=${payload.model_src}.`);
-        }, 450);
       });
     }
   </script>
