@@ -30,7 +30,6 @@
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
-      align-items: center;
     }
     button {
       padding: 10px 12px;
@@ -42,22 +41,11 @@
     }
     button:active { transform: scale(0.99); }
 
-    /* ✅ 截图开关按钮的状态样式 */
-    .toggle-on {
-      background: #111;
-      color: #fff;
-      border-color: #111;
-    }
-    .toggle-off {
-      background: #fff;
-      color: #111;
-      border-color: #ddd;
-    }
-    .toggle-label {
+    .hint {
+      margin-top: 8px;
       font-size: 12px;
-      color: #555;
-      margin-left: 4px;
-      user-select: none;
+      color: #666;
+      line-height: 1.35;
     }
 
     /* ===== Chat UI ===== */
@@ -192,15 +180,17 @@
 
     <div class="panel">
       <div class="btns">
-        <button onclick="setModel('assembled.glb', 'assembled.usdz')">assembled</button>
-        <button onclick="setModel('gear_exploded.glb', 'gear_exploded.usdz')">gear</button>
-        <button onclick="setModel('motor_exploded.glb', 'motor_exploded.usdz')">motor</button>
-        <!-- ✅ 修正：all_exploded.usdz 少了一个点 -->
-        <button onclick="setModel('all_exploded.glb', 'all_exploded.usdz')">all exploded</button>
+        <button onclick="setModel('assembled.glb', 'assembled.usdz')">不爆炸</button>
+        <button onclick="setModel('explode_A.glb', 'explode_A.usdz')">部分 A</button>
+        <button onclick="setModel('explode_B.glb', 'explode_B.usdz')">部分 B</button>
+        <button onclick="setModel('explode_C.glb', 'explode_C.usdz')">部分 C</button>
+        <button onclick="setModel('explode_D.glb', 'explode_D.usdz')">部分 D</button>
+        <button onclick="setModel('explode_all.glb', 'explode_all.usdz')">全部爆炸</button>
+      </div>
 
-        <!-- ✅ 新增：控制是否发送截图 -->
-        <button id="imgToggleBtn" class="toggle-on" onclick="toggleSendImage()">Send image: ON</button>
-        <span class="toggle-label" id="imgToggleLabel">(snapshot will be included)</span>
+      <div class="hint">
+        提示：iOS/iPad 真 AR 推荐提供 .usdz 文件；网页需 HTTPS 才更稳定。<br>
+        注意：网页截图只能截到“网页 3D 预览”，无法截 iOS Quick Look 的系统 AR 画面。
       </div>
 
       <button class="chat-fab" onclick="toggleChat()">Chat</button>
@@ -225,7 +215,7 @@
     </div>
 
     <div class="small">
-      发送时会自动截取当前 3D 预览截图，并把“问题 + 截图”打包为 payload（已为后端接入准备）。
+      发送时会自动截取当前 3D 预览截图，并把“问题 + 截图”发送到 GPT。
     </div>
   </div>
 
@@ -235,28 +225,10 @@
     const chatBody = document.getElementById("chatBody");
     const chatInput = document.getElementById("chatInput");
 
-    // ✅ 新增：是否把截图包含进 payload（默认 ON）
-    let sendImageEnabled = true;
-    const imgToggleBtn = document.getElementById("imgToggleBtn");
-    const imgToggleLabel = document.getElementById("imgToggleLabel");
+    // ✅ 你的 Worker /ask 接口
+    const WORKER_ASK_URL = "https://webxr-gpt-connect.sz20040906.workers.dev/ask";
 
-    function toggleSendImage() {
-      sendImageEnabled = !sendImageEnabled;
-
-      if (sendImageEnabled) {
-        imgToggleBtn.textContent = "Send image: ON";
-        imgToggleBtn.classList.remove("toggle-off");
-        imgToggleBtn.classList.add("toggle-on");
-        imgToggleLabel.textContent = "(snapshot will be included)";
-      } else {
-        imgToggleBtn.textContent = "Send image: OFF";
-        imgToggleBtn.classList.remove("toggle-on");
-        imgToggleBtn.classList.add("toggle-off");
-        imgToggleLabel.textContent = "(text-only)";
-      }
-    }
-
-    // ===== 1) 切换模型：不做任何复制 =====
+    // ===== 1) 切换模型 =====
     function setModel(glbFile, usdzFile) {
       mv.src = glbFile;
       mv.setAttribute("ios-src", usdzFile);
@@ -297,50 +269,59 @@
       if (e.key === "Enter") sendMessage();
     });
 
-    // ===== 3) 发送时：根据开关决定是否截图 + 组装 payload（为后端准备）=====
+    // ===== 3) 发送：自动截图 + 发到 Worker + 显示 GPT 回复 =====
     async function sendMessage() {
       const q = chatInput.value.trim();
       if (!q) return;
       chatInput.value = "";
 
-      // ✅ 只有开关为 ON 才截图
-      const snapshotDataUrl = sendImageEnabled ? await captureSnapshot() : null;
+      // 自动截图（截网页 3D 预览）
+      const snapshotDataUrl = await captureSnapshot();
 
-      // 在聊天里显示用户消息（如果ON则带预览图）
+      // 显示用户消息 + 截图预览
       appendMessage("user", q, snapshotDataUrl);
 
-      // ✅ 为后端接入准备的 payload（截图开关 OFF 时 snapshot_data_url 为 null）
+      // payload：发给 Worker（Worker 再发给 OpenAI）
       const payload = {
         question: q,
-        snapshot_data_url: snapshotDataUrl, // data:image/jpeg;base64,... 或 null
+        snapshot_data_url: snapshotDataUrl, // data:image/jpeg;base64,... (可能为 null)
         model_src: mv.getAttribute("src"),
         ts: Date.now()
       };
 
+      // 显示一个“占位”AI消息
       appendMessage("ai", "Thinking...");
 
       try {
-        const r = await fetch("https://webxr-gpt-connect.sz20040906.workers.dev/ask", {
+        const r = await fetch(WORKER_ASK_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: JSON.stringify(payload)
         });
 
         const data = await r.json();
-  // 把“Thinking...”那条替换为真实答案：最简单做法是再追加一条 AI 消息
-        appendMessage("ai", data.answer || ("Error: " + (data.error || "unknown")));
+
+        if (!r.ok) {
+          appendMessage("ai", `Error (${r.status}): ${data.error || "Request failed"}`);
+          return;
+        }
+
+        appendMessage("ai", data.answer || "(No answer)");
       } catch (err) {
-        appendMessage("ai", "Network error: " + err);
+        appendMessage("ai", "Network error: " + String(err));
       }
+    }
 
     // ===== 4) 截图：优先用 model-viewer.toDataURL()，否则尝试内部 canvas =====
     async function captureSnapshot() {
       try {
+        // 优先：model-viewer 常见版本支持 toDataURL()
         if (typeof mv.toDataURL === "function") {
           const pngDataUrl = await mv.toDataURL();
           return await convertDataUrlToJpeg(pngDataUrl, 0.75);
         }
 
+        // 兜底：尝试拿到 shadowRoot 内部 canvas
         const canvas = mv.shadowRoot?.querySelector("canvas");
         if (canvas && canvas.toDataURL) {
           const pngDataUrl = canvas.toDataURL("image/png");
@@ -353,7 +334,7 @@
       }
     }
 
-    // PNG -> JPEG（减小体积，未来传后端更省）
+    // PNG -> JPEG（减小体积，传后端更省）
     function convertDataUrlToJpeg(dataUrl, quality = 0.8) {
       return new Promise((resolve) => {
         const img = new Image();
