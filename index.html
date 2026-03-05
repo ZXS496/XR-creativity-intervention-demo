@@ -17,7 +17,7 @@
     model-viewer {
       width: 100%;
       flex: 1;
-      background: #cfcfcf;
+      background: #cfcfcf; /* 你也可以改成 #bdbdbd / #d0d0d0 */
     }
 
     .panel {
@@ -215,7 +215,7 @@
     </div>
 
     <div class="small">
-      发送时会自动截取当前 3D 预览截图，并把“问题 + 截图”发送到 GPT。
+      发送时会自动截取当前 3D 预览截图，并把“问题 + 截图”打包为 payload（已为后端接入准备）。
     </div>
   </div>
 
@@ -225,10 +225,7 @@
     const chatBody = document.getElementById("chatBody");
     const chatInput = document.getElementById("chatInput");
 
-    // ✅ 你的 Worker /ask 接口
-    const WORKER_ASK_URL = "https://webxr-gpt-connect.sz20040906.workers.dev/ask";
-
-    // ===== 1) 切换模型 =====
+    // ===== 1) 切换模型：不做任何复制 =====
     function setModel(glbFile, usdzFile) {
       mv.src = glbFile;
       mv.setAttribute("ios-src", usdzFile);
@@ -269,7 +266,7 @@
       if (e.key === "Enter") sendMessage();
     });
 
-    // ===== 3) 发送：自动截图 + 发到 Worker + 显示 GPT 回复 =====
+    // ===== 3) ✅ 发送时自动截图 + 真实调用你的 Worker（只改这一段逻辑）=====
     async function sendMessage() {
       const q = chatInput.value.trim();
       if (!q) return;
@@ -278,22 +275,22 @@
       // 自动截图（截网页 3D 预览）
       const snapshotDataUrl = await captureSnapshot();
 
-      // 显示用户消息 + 截图预览
+      // 在聊天里显示用户消息 + 截图预览（方便你确认截到了）
       appendMessage("user", q, snapshotDataUrl);
 
-      // payload：发给 Worker（Worker 再发给 OpenAI）
+      // 发给 Worker 的 payload（保持你原来的结构不变）
       const payload = {
         question: q,
-        snapshot_data_url: snapshotDataUrl, // data:image/jpeg;base64,... (可能为 null)
+        snapshot_data_url: snapshotDataUrl, // data:image/jpeg;base64,...
         model_src: mv.getAttribute("src"),
         ts: Date.now()
       };
 
-      // 显示一个“占位”AI消息
+      // 先显示一个“思考中”提示
       appendMessage("ai", "Thinking...");
 
       try {
-        const r = await fetch(WORKER_ASK_URL, {
+        const r = await fetch("https://webxr-gpt-connect.sz20040906.workers.dev/ask", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -301,14 +298,11 @@
 
         const data = await r.json();
 
-        if (!r.ok) {
-          appendMessage("ai", `Error (${r.status}): ${data.error || "Request failed"}`);
-          return;
-        }
-
-        appendMessage("ai", data.answer || "(No answer)");
+        // Worker 约定返回 { answer }，否则显示 error
+        const answer = data.answer || ("Error: " + (data.error || "unknown"));
+        appendMessage("ai", answer);
       } catch (err) {
-        appendMessage("ai", "Network error: " + String(err));
+        appendMessage("ai", "Network error: " + err);
       }
     }
 
@@ -334,7 +328,7 @@
       }
     }
 
-    // PNG -> JPEG（减小体积，传后端更省）
+    // PNG -> JPEG（减小体积，未来传后端更省）
     function convertDataUrlToJpeg(dataUrl, quality = 0.8) {
       return new Promise((resolve) => {
         const img = new Image();
