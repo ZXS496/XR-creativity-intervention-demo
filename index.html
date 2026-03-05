@@ -317,17 +317,21 @@
         ts: Date.now()
       };
 
-      console.log("READY_FOR_BACKEND_PAYLOAD:", payload);
+      appendMessage("ai", "Thinking...");
 
-      // 临时模拟 AI 回复（你接后端后替换这里即可）
-      const demoReply = sendImageEnabled
-        ? (snapshotDataUrl
-            ? "(demo) I got your question and a snapshot."
-            : "(demo) Image sending is ON, but snapshot capture failed on this device/browser.")
-        : "(demo) Image sending is OFF (text-only).";
+      try {
+        const r = await fetch("https://webxr-gpt-connect.sz20040906.workers.dev/ask", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
 
-      appendMessage("ai", demoReply);
-    }
+        const data = await r.json();
+  // 把“Thinking...”那条替换为真实答案：最简单做法是再追加一条 AI 消息
+        appendMessage("ai", data.answer || ("Error: " + (data.error || "unknown")));
+      } catch (err) {
+        appendMessage("ai", "Network error: " + err);
+      }
 
     // ===== 4) 截图：优先用 model-viewer.toDataURL()，否则尝试内部 canvas =====
     async function captureSnapshot() {
