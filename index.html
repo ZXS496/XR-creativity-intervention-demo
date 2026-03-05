@@ -256,6 +256,39 @@
       }
     }
 
+    // ===== ✅✅ 新增：对话记忆（前端保存 + 刷新保留）=====
+    const HISTORY_KEY = "xr_chat_history_v1";
+    const HISTORY_MAX = 12; // 只发最近 12 条（约 6 轮），速度更快
+
+    let chatHistory = []; 
+    // chatHistory 元素格式：{ role: "user" | "assistant", content: "..." }
+
+    function saveHistory() {
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(chatHistory));
+      } catch (e) {}
+    }
+
+    function loadHistory() {
+      try {
+        const raw = localStorage.getItem(HISTORY_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) chatHistory = parsed;
+      } catch (e) {
+        chatHistory = [];
+      }
+    }
+
+    function renderHistory() {
+      // 只渲染文本历史（历史截图不存，节省空间/成本）
+      for (const m of chatHistory) {
+        if (m.role === "user") appendMessage("user", m.content, null);
+        else appendMessage("ai", m.content, null);
+      }
+    }
+    // ===== ✅✅ 新增结束 =====
+
     // ===== 1) 切换模型：不做任何复制 =====
     function setModel(glbFile, usdzFile) {
       mv.src = glbFile;
@@ -269,8 +302,15 @@
         setTimeout(() => chatInput.focus(), 50);
       }
     }
-    function clearChat() { chatBody.innerHTML = ""; }
 
+    // ✅ 修改：Clear 同时清空 UI + 本地记忆（刷新也从新对话开始）
+    function clearChat() {
+      chatBody.innerHTML = "";
+      chatHistory = [];
+      try { localStorage.removeItem(HISTORY_KEY); } catch (e) {}
+    }
+
+    // ✅ 轻微增强：appendMessage 返回 bubble DOM，便于更新“Thinking...”那条（不影响其他使用）
     function appendMessage(role, text, imgDataUrl = null) {
       const row = document.createElement("div");
       row.className = `msg ${role}`;
@@ -291,6 +331,7 @@
       row.appendChild(bubble);
       chatBody.appendChild(row);
       chatBody.scrollTop = chatBody.scrollHeight;
+      return bubble;
     }
 
     chatInput.addEventListener("keydown", (e) => {
@@ -309,12 +350,18 @@
       // 在聊天里显示用户消息（如果ON则带预览图）
       appendMessage("user", q, snapshotDataUrl);
 
+      // ✅✅ 新增：写入历史 + 保存
+      chatHistory.push({ role: "user", content: q });
+      saveHistory();
+
       // ✅ 为后端接入准备的 payload（截图开关 OFF 时 snapshot_data_url 为 null）
+      // ✅✅ 新增：把最近 N 条历史一起发给后端，让模型有上下文
       const payload = {
         question: q,
         snapshot_data_url: snapshotDataUrl, // data:image/jpeg;base64,... 或 null
         model_src: mv.getAttribute("src"),
-        ts: Date.now()
+        ts: Date.now(),
+        history: chatHistory.slice(-HISTORY_MAX)
       };
 
       console.log("READY_FOR_BACKEND_PAYLOAD:", payload);
@@ -322,7 +369,7 @@
       // =========================
       // ✅✅ 这里开始：接入 AI（只修改这一段）
       // =========================
-      appendMessage("ai", "Thinking...");
+      const thinkingBubble = appendMessage("ai", "Thinking...");
 
       try {
         const r = await fetch("https://webxr-gpt-connect.sz20040906.workers.dev/ask", {
@@ -334,12 +381,17 @@
         const data = await r.json();
 
         if (data && data.answer) {
-          appendMessage("ai", data.answer);
+          // 用返回结果覆盖“Thinking...”那条（避免多一条）
+          thinkingBubble.textContent = data.answer;
+
+          // ✅✅ 新增：写入历史 + 保存
+          chatHistory.push({ role: "assistant", content: data.answer });
+          saveHistory();
         } else {
-          appendMessage("ai", "Error: " + (data?.error || "No answer returned."));
+          thinkingBubble.textContent = "Error: " + (data?.error || "No answer returned.");
         }
       } catch (err) {
-        appendMessage("ai", "Network error: " + err);
+        thinkingBubble.textContent = "Network error: " + err;
       }
       // =========================
       // ✅✅ 这里结束：接入 AI
@@ -382,6 +434,10 @@
         img.src = dataUrl;
       });
     }
+
+    // ✅✅ 新增：页面加载时恢复历史并渲染（刷新后继续对话）
+    loadHistory();
+    renderHistory();
   </script>
 </body>
 </html>
