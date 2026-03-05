@@ -17,7 +17,7 @@
     model-viewer {
       width: 100%;
       flex: 1;
-      background: #cfcfcf; /* 你也可以改成 #bdbdbd / #d0d0d0 */
+      background: #cfcfcf;
     }
 
     .panel {
@@ -30,6 +30,7 @@
       display: flex;
       gap: 8px;
       flex-wrap: wrap;
+      align-items: center;
     }
     button {
       padding: 10px 12px;
@@ -41,11 +42,22 @@
     }
     button:active { transform: scale(0.99); }
 
-    .hint {
-      margin-top: 8px;
+    /* ✅ 截图开关按钮的状态样式 */
+    .toggle-on {
+      background: #111;
+      color: #fff;
+      border-color: #111;
+    }
+    .toggle-off {
+      background: #fff;
+      color: #111;
+      border-color: #ddd;
+    }
+    .toggle-label {
       font-size: 12px;
-      color: #666;
-      line-height: 1.35;
+      color: #555;
+      margin-left: 4px;
+      user-select: none;
     }
 
     /* ===== Chat UI ===== */
@@ -180,17 +192,15 @@
 
     <div class="panel">
       <div class="btns">
-        <button onclick="setModel('assembled.glb', 'assembled.usdz')">不爆炸</button>
-        <button onclick="setModel('explode_A.glb', 'explode_A.usdz')">部分 A</button>
-        <button onclick="setModel('explode_B.glb', 'explode_B.usdz')">部分 B</button>
-        <button onclick="setModel('explode_C.glb', 'explode_C.usdz')">部分 C</button>
-        <button onclick="setModel('explode_D.glb', 'explode_D.usdz')">部分 D</button>
-        <button onclick="setModel('explode_all.glb', 'explode_all.usdz')">全部爆炸</button>
-      </div>
+        <button onclick="setModel('assembled.glb', 'assembled.usdz')">assembled</button>
+        <button onclick="setModel('gear_exploded.glb', 'gear_exploded.usdz')">gear</button>
+        <button onclick="setModel('motor_exploded.glb', 'motor_exploded.usdz')">motor</button>
+        <!-- ✅ 修正：all_exploded.usdz 少了一个点 -->
+        <button onclick="setModel('all_exploded.glb', 'all_exploded.usdz')">all exploded</button>
 
-      <div class="hint">
-        提示：iOS/iPad 真 AR 推荐提供 .usdz 文件；网页需 HTTPS 才更稳定。<br>
-        注意：网页截图只能截到“网页 3D 预览”，无法截 iOS Quick Look 的系统 AR 画面。
+        <!-- ✅ 新增：控制是否发送截图 -->
+        <button id="imgToggleBtn" class="toggle-on" onclick="toggleSendImage()">Send image: ON</button>
+        <span class="toggle-label" id="imgToggleLabel">(snapshot will be included)</span>
       </div>
 
       <button class="chat-fab" onclick="toggleChat()">Chat</button>
@@ -224,6 +234,27 @@
     const chatPanel = document.getElementById("chatPanel");
     const chatBody = document.getElementById("chatBody");
     const chatInput = document.getElementById("chatInput");
+
+    // ✅ 新增：是否把截图包含进 payload（默认 ON）
+    let sendImageEnabled = true;
+    const imgToggleBtn = document.getElementById("imgToggleBtn");
+    const imgToggleLabel = document.getElementById("imgToggleLabel");
+
+    function toggleSendImage() {
+      sendImageEnabled = !sendImageEnabled;
+
+      if (sendImageEnabled) {
+        imgToggleBtn.textContent = "Send image: ON";
+        imgToggleBtn.classList.remove("toggle-off");
+        imgToggleBtn.classList.add("toggle-on");
+        imgToggleLabel.textContent = "(snapshot will be included)";
+      } else {
+        imgToggleBtn.textContent = "Send image: OFF";
+        imgToggleBtn.classList.remove("toggle-on");
+        imgToggleBtn.classList.add("toggle-off");
+        imgToggleLabel.textContent = "(text-only)";
+      }
+    }
 
     // ===== 1) 切换模型：不做任何复制 =====
     function setModel(glbFile, usdzFile) {
@@ -266,27 +297,31 @@
       if (e.key === "Enter") sendMessage();
     });
 
-    // ===== 3) ✅ 发送时自动截图 + 真实调用你的 Worker（只改这一段逻辑）=====
+    // ===== 3) 发送时：根据开关决定是否截图 + 组装 payload（为后端准备）=====
     async function sendMessage() {
       const q = chatInput.value.trim();
       if (!q) return;
       chatInput.value = "";
 
-      // 自动截图（截网页 3D 预览）
-      const snapshotDataUrl = await captureSnapshot();
+      // ✅ 只有开关为 ON 才截图
+      const snapshotDataUrl = sendImageEnabled ? await captureSnapshot() : null;
 
-      // 在聊天里显示用户消息 + 截图预览（方便你确认截到了）
+      // 在聊天里显示用户消息（如果ON则带预览图）
       appendMessage("user", q, snapshotDataUrl);
 
-      // 发给 Worker 的 payload（保持你原来的结构不变）
+      // ✅ 为后端接入准备的 payload（截图开关 OFF 时 snapshot_data_url 为 null）
       const payload = {
         question: q,
-        snapshot_data_url: snapshotDataUrl, // data:image/jpeg;base64,...
+        snapshot_data_url: snapshotDataUrl, // data:image/jpeg;base64,... 或 null
         model_src: mv.getAttribute("src"),
         ts: Date.now()
       };
 
-      // 先显示一个“思考中”提示
+      console.log("READY_FOR_BACKEND_PAYLOAD:", payload);
+
+      // =========================
+      // ✅✅ 这里开始：接入 AI（只修改这一段）
+      // =========================
       appendMessage("ai", "Thinking...");
 
       try {
@@ -298,24 +333,27 @@
 
         const data = await r.json();
 
-        // Worker 约定返回 { answer }，否则显示 error
-        const answer = data.answer || ("Error: " + (data.error || "unknown"));
-        appendMessage("ai", answer);
+        if (data && data.answer) {
+          appendMessage("ai", data.answer);
+        } else {
+          appendMessage("ai", "Error: " + (data?.error || "No answer returned."));
+        }
       } catch (err) {
         appendMessage("ai", "Network error: " + err);
       }
+      // =========================
+      // ✅✅ 这里结束：接入 AI
+      // =========================
     }
 
     // ===== 4) 截图：优先用 model-viewer.toDataURL()，否则尝试内部 canvas =====
     async function captureSnapshot() {
       try {
-        // 优先：model-viewer 常见版本支持 toDataURL()
         if (typeof mv.toDataURL === "function") {
           const pngDataUrl = await mv.toDataURL();
           return await convertDataUrlToJpeg(pngDataUrl, 0.75);
         }
 
-        // 兜底：尝试拿到 shadowRoot 内部 canvas
         const canvas = mv.shadowRoot?.querySelector("canvas");
         if (canvas && canvas.toDataURL) {
           const pngDataUrl = canvas.toDataURL("image/png");
